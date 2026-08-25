@@ -4,27 +4,61 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>청주 찐맛집 검증 플랫폼</title>
+  <!-- 지도 라이브러리 스타일 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #f8fafc; color: #1e293b; display: flex; justify-content: center; min-height: 100vh; }
-    .container { width: 100%; max-width: 480px; background: #ffffff; min-height: 100vh; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); padding: 16px; }
-    header { border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px; }
+    body { background-color: #f1f5f9; color: #1e293b; display: flex; justify-content: center; min-height: 100vh; }
+    .container { width: 100%; max-width: 480px; background: #ffffff; min-height: 100vh; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); padding: 16px; position: relative; }
+    header { border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px; }
     h1 { font-size: 20px; font-weight: 700; color: #0f172a; }
-    .search-box { display: flex; gap: 8px; margin-bottom: 12px; }
+    
+    .search-box { display: flex; gap: 8px; margin-bottom: 10px; }
     input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }
-    button.btn-search { padding: 10px 16px; background-color: #2563eb; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-    .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 16px; }
-    .chip { padding: 6px 12px; background: #f1f5f9; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #e2e8f0; white-space: nowrap; }
+    button.btn-search { padding: 10px 16px; background-color: #2563eb; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    
+    .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
+    .chip { padding: 6px 12px; background: #f8fafc; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #cbd5e1; white-space: nowrap; }
     .chip.active { background: #2563eb; color: white; border-color: #2563eb; }
-    .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; transition: transform 0.1s; }
-    .card:hover { transform: translateY(-2px); }
-    .badge-verified { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
-    .badge-gov { display: inline-block; background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
-    .card-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    
+    #map { width: 100%; height: 220px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #e2e8f0; z-index: 1; }
+    
+    .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; cursor: pointer; transition: all 0.15s ease; background: #ffffff; }
+    .card:hover { border-color: #93c5fd; box-shadow: 0 2px 8px rgba(37,99,235,0.08); transform: translateY(-1px); }
+    .badge-verified { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    .badge-gov { display: inline-block; background: #dcfce7; color: #15803d; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    .card-title { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
     .card-sub { font-size: 13px; color: #64748b; margin-bottom: 8px; }
     .rate-bar-bg { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-top: 6px; }
     .rate-bar-fill { height: 100%; background: #2563eb; }
     .stats { display: flex; justify-content: space-between; font-size: 12px; color: #475569; margin-top: 6px; }
+
+    /* 상세 팝업 모달 */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: flex-end; }
+    .modal-overlay.open { display: flex; }
+    .modal-content { width: 100%; max-width: 480px; background: #ffffff; border-radius: 20px 20px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; animation: slideUp 0.2s ease-out; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    
+    .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .modal-title { font-size: 18px; font-weight: 700; }
+    .btn-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #64748b; line-height: 1; }
+    
+    .external-links { display: flex; gap: 8px; margin: 12px 0; }
+    .btn-ext { flex: 1; text-align: center; text-decoration: none; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 600; display: block; }
+    .btn-naver { background: #03c75a; color: white; }
+    .btn-kakao { background: #fee500; color: #191919; }
+    
+    .review-form { background: #f8fafc; border-radius: 10px; padding: 12px; margin-top: 14px; border: 1px solid #e2e8f0; }
+    .form-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .star-select { display: flex; gap: 6px; margin-bottom: 10px; }
+    .star-btn { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; font-size: 13px; cursor: pointer; }
+    .star-btn.selected { background: #2563eb; color: white; border-color: #2563eb; }
+    .review-input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none; margin-bottom: 8px; }
+    .btn-submit { width: 100%; padding: 10px; background: #2563eb; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
+
+    .review-list { margin-top: 16px; }
+    .review-item { border-bottom: 1px solid #f1f5f9; padding: 8px 0; font-size: 13px; }
+    .review-item-header { display: flex; justify-content: space-between; color: #64748b; font-size: 12px; margin-bottom: 2px; }
   </style>
 </head>
 <body>
@@ -44,25 +78,110 @@
       <div class="chip" onclick="setFilter('gov', this)">청주시 모범음식점</div>
     </div>
 
+    <!-- 청주 지도 영역 -->
+    <div id="map"></div>
+
+    <!-- 식당 목록 영역 -->
     <div id="restaurantList"></div>
   </div>
 
+  <!-- 상세 모달 창 -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-content" id="modalContent"></div>
+  </div>
+
+  <!-- Leaflet 지도 JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const restaurants = [
-      { name: "삼포집 복대점", area: "복대동", category: "육류/고기", total: 45, fiveStar: 42, isGov: true },
-      { name: "성안길 파스타공방", area: "성안길", category: "양식", total: 30, fiveStar: 28, isGov: false },
-      { name: "율량 정통순대국", area: "율량동", category: "한식", total: 20, fiveStar: 15, isGov: true },
-      { name: "지웰 해물칼국수", area: "복대동", category: "면류", total: 18, fiveStar: 17, isGov: false }
+      { 
+        id: 1, 
+        name: "삼포집 복대점", 
+        area: "복대동", 
+        category: "육류/고기", 
+        lat: 36.6345, 
+        lng: 127.4328, 
+        total: 45, 
+        fiveStar: 42, 
+        isGov: true,
+        address: "충북 청주시 흥덕구 복대동 일원",
+        reviews: ["고기 질이 정말 좋고 구워먹기 편해요.", "가족 모임하기 딱 좋습니다."]
+      },
+      { 
+        id: 2, 
+        name: "성안길 파스타공방", 
+        area: "성안길", 
+        category: "양식", 
+        lat: 36.6358, 
+        lng: 127.4880, 
+        total: 30, 
+        fiveStar: 28, 
+        isGov: false,
+        address: "충북 청주시 상당구 북문로1가 성안길",
+        reviews: ["소스가 꾸덕하고 분위기도 아늑합니다.", "데이트 코스로 만족스러웠습니다."]
+      },
+      { 
+        id: 3, 
+        name: "율량 정통순대국", 
+        area: "율량동", 
+        category: "한식", 
+        lat: 36.6680, 
+        lng: 127.4982, 
+        total: 20, 
+        fiveStar: 15, 
+        isGov: true,
+        address: "충북 청주시 청원구 율량동",
+        reviews: ["국물이 깊고 잡내가 없네요.", "든든한 한 끼로 추천합니다."]
+      },
+      { 
+        id: 4, 
+        name: "지웰 해물칼국수", 
+        area: "복대동", 
+        category: "면류", 
+        lat: 36.6420, 
+        lng: 127.4265, 
+        total: 18, 
+        fiveStar: 17, 
+        isGov: false,
+        address: "충북 청주시 흥덕구 대농로 지웰시티 인근",
+        reviews: ["해물이 신선하고 양이 푸짐합니다."]
+      }
     ];
 
     let currentFilter = 'all';
+    let map, markers = [];
+    let selectedStar = 5;
+    let currentSelectedId = null;
 
+    // 지도 초기화 (청주 중심 좌표)
+    function initMap() {
+      map = L.map('map').setView([36.6424, 127.4600], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+    }
+
+    // 마커 업데이트
+    function updateMapMarkers(list) {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      list.forEach(item => {
+        const marker = L.marker([item.lat, item.lng]).addTo(map);
+        marker.bindPopup('<b>' + item.name + '</b><br>' + item.category);
+        marker.on('click', () => openModal(item.id));
+        markers.push(marker);
+      });
+    }
+
+    // 리스트 렌더링
     function renderList(list) {
       const container = document.getElementById('restaurantList');
       container.innerHTML = '';
 
-      if(list.length === 0) {
+      if (list.length === 0) {
         container.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:30px 0;">검색 결과가 없습니다.</p>';
+        updateMapMarkers([]);
         return;
       }
 
@@ -76,6 +195,7 @@
 
         const card = document.createElement('div');
         card.className = 'card';
+        card.onclick = () => openModal(item.id);
         card.innerHTML = 
           '<div>' + badges + '</div>' +
           '<div class="card-title">' + item.name + '</div>' +
@@ -87,8 +207,11 @@
           '</div>';
         container.appendChild(card);
       });
+
+      updateMapMarkers(list);
     }
 
+    // 필터링 동작
     function filterList() {
       const text = document.getElementById('searchInput').value.toLowerCase();
       let filtered = restaurants.filter(r => r.name.toLowerCase().includes(text) || r.area.toLowerCase().includes(text) || r.category.toLowerCase().includes(text));
@@ -109,7 +232,96 @@
       filterList();
     }
 
-    renderList(restaurants);
+    // 상세 모달 열기
+    function openModal(id) {
+      currentSelectedId = id;
+      const item = restaurants.find(r => r.id === id);
+      if (!item) return;
+
+      const ratio = Math.round((item.fiveStar / item.total) * 100);
+      const isVerified = ratio >= 90 && item.total >= 10;
+      
+      const naverSearchUrl = 'https://m.map.naver.com/search2/search.naver?query=' + encodeURIComponent('청주 ' + item.name);
+      const kakaoSearchUrl = 'https://map.kakao.com/link/search/' + encodeURIComponent('청주 ' + item.name);
+
+      let badges = '';
+      if (isVerified) badges += '<span class="badge-verified">★ 5점 ' + ratio + '% 맛집 인증</span> ';
+      if (item.isGov) badges += '<span class="badge-gov">청주시 모범음식점</span>';
+
+      const modalContent = document.getElementById('modalContent');
+      modalContent.innerHTML = 
+        '<div class="modal-header">' +
+          '<div>' +
+            '<div>' + badges + '</div>' +
+            '<div class="modal-title">' + item.name + '</div>' +
+            '<div style="font-size:13px; color:#64748b; margin-top:2px;">' + item.address + '</div>' +
+          '</div>' +
+          '<button class="btn-close" onclick="closeModal()">×</button>' +
+        '</div>' +
+
+        '<div class="rate-bar-bg"><div class="rate-bar-fill" style="width:' + ratio + '%;"></div></div>' +
+        '<div class="stats" style="margin-bottom:12px;">' +
+          '<span>5점 만족도 <strong>' + ratio + '%</strong></span>' +
+          '<span>총 리뷰 ' + item.total + '개 (5점 ' + item.fiveStar + '개)</span>' +
+        '</div>' +
+
+        '<div class="external-links">' +
+          '<a class="btn-ext btn-naver" href="' + naverSearchUrl + '" target="_blank">네이버 플레이스 리뷰</a>' +
+          '<a class="btn-ext btn-kakao" href="' + kakaoSearchUrl + '" target="_blank">카카오맵 리뷰</a>' +
+        '</div>' +
+
+        '<div class="review-form">' +
+          '<div class="form-title">내 평가 남기기 (실시간 인증 반영)</div>' +
+          '<div class="star-select">' +
+            '<button class="star-btn" onclick="selectStar(1, this)">★ 1점</button>' +
+            '<button class="star-btn" onclick="selectStar(2, this)">★ 2점</button>' +
+            '<button class="star-btn" onclick="selectStar(3, this)">★ 3점</button>' +
+            '<button class="star-btn" onclick="selectStar(4, this)">★ 4점</button>' +
+            '<button class="star-btn selected" onclick="selectStar(5, this)">★ 5점</button>' +
+          '</div>' +
+          '<input type="text" id="reviewComment" class="review-input" placeholder="솔직한 한 줄 후기를 남겨주세요">' +
+          '<button class="btn-submit" onclick="submitReview()">리뷰 등록하고 5점 비율 갱신</button>' +
+        '</div>' +
+
+        '<div class="review-list">' +
+          '<div style="font-size:14px; font-weight:700; margin-bottom:8px;">자체 검증 리뷰 (' + item.reviews.length + ')</div>' +
+          item.reviews.map(r => '<div class="review-item"><div class="review-item-header"><span>익명 평가자</span><span>방금 전</span></div><div>' + r + '</div></div>').join('') +
+        '</div>';
+
+      document.getElementById('modalOverlay').classList.add('open');
+    }
+
+    function selectStar(star, btn) {
+      selectedStar = star;
+      document.querySelectorAll('.star-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    }
+
+    function submitReview() {
+      const comment = document.getElementById('reviewComment').value.trim();
+      const item = restaurants.find(r => r.id === currentSelectedId);
+      if (!item) return;
+
+      item.total += 1;
+      if (selectedStar === 5) {
+        item.fiveStar += 1;
+      }
+      if (comment) {
+        item.reviews.unshift((selectedStar === 5 ? '★5점: ' : '★' + selectedStar + '점: ') + comment);
+      }
+
+      openModal(item.id);
+      filterList();
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').classList.remove('open');
+    }
+
+    window.onload = function() {
+      initMap();
+      renderList(restaurants);
+    };
   </script>
 </body>
 </html>

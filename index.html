@@ -15,18 +15,24 @@
     
     .search-box { display: flex; gap: 8px; margin-bottom: 10px; }
     input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }
-    button.btn-search { padding: 10px 16px; background-color: #2563eb; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button.btn-search { padding: 10px 14px; background-color: #2563eb; color: #ffffff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button.btn-location { padding: 10px 12px; background-color: #0f172a; color: #ffffff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     
     .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; }
     .chip { padding: 6px 12px; background: #f8fafc; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #cbd5e1; white-space: nowrap; }
     .chip.active { background: #2563eb; color: white; border-color: #2563eb; }
     
-    #map { width: 100%; height: 220px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #e2e8f0; z-index: 1; }
+    .map-wrapper { position: relative; margin-bottom: 16px; }
+    #map { width: 100%; height: 230px; border-radius: 12px; border: 1px solid #e2e8f0; z-index: 1; }
+    .location-status { font-size: 11px; color: #64748b; margin-top: 4px; text-align: right; }
     
     .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; cursor: pointer; transition: all 0.15s ease; background: #ffffff; }
     .card:hover { border-color: #93c5fd; box-shadow: 0 2px 8px rgba(37,99,235,0.08); transform: translateY(-1px); }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
     .badge-verified { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
     .badge-gov { display: inline-block; background: #dcfce7; color: #15803d; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    .dist-tag { font-size: 12px; font-weight: 600; color: #ef4444; background: #fee2e2; padding: 2px 6px; border-radius: 4px; }
+    
     .card-title { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
     .card-sub { font-size: 13px; color: #64748b; margin-bottom: 8px; }
     .rate-bar-bg { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-top: 6px; }
@@ -70,6 +76,7 @@
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="식당명 또는 동네 (예: 복대동, 삼겹살)" onkeyup="filterList()">
       <button class="btn-search" onclick="filterList()">검색</button>
+      <button class="btn-location" onclick="getMyLocation()">내 위치</button>
     </div>
 
     <div class="filters">
@@ -79,7 +86,10 @@
     </div>
 
     <!-- 청주 지도 영역 -->
-    <div id="map"></div>
+    <div class="map-wrapper">
+      <div id="map"></div>
+      <div id="locationStatus" class="location-status">내 위치 버튼을 누르면 주변 거리가 계산됩니다.</div>
+    </div>
 
     <!-- 식당 목록 영역 -->
     <div id="restaurantList"></div>
@@ -150,15 +160,71 @@
 
     let currentFilter = 'all';
     let map, markers = [];
+    let myMarker = null;
+    let userCoords = null;
     let selectedStar = 5;
     let currentSelectedId = null;
 
-    // 지도 초기화 (청주 중심 좌표)
+    // 거리 계산 공식 (km 단위 반환)
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return (R * c).toFixed(1);
+    }
+
+    // 지도 초기화
     function initMap() {
       map = L.map('map').setView([36.6424, 127.4600], 12);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap'
       }).addTo(map);
+    }
+
+    // 내 위치 가져오기
+    function getMyLocation() {
+      const statusEl = document.getElementById('locationStatus');
+      statusEl.innerText = "내 위치를 불러오는 중입니다...";
+
+      if (!navigator.geolocation) {
+        statusEl.innerText = "GPS 기능을 지원하지 않는 환경입니다.";
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          userCoords = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+          statusEl.innerText = "내 위치 수신 완료 (주변 거리 반영됨)";
+
+          // 내 위치 마커 표시
+          if (myMarker) map.removeLayer(myMarker);
+          myMarker = L.circleMarker([userCoords.lat, userCoords.lng], {
+            radius: 8,
+            fillColor: "#ef4444",
+            color: "#ffffff",
+            weight: 3,
+            opacity: 1,
+            fillOpacity: 0.9
+          }).addTo(map);
+
+          myMarker.bindPopup("<b>내 현재 위치</b>").openPopup();
+          map.setView([userCoords.lat, userCoords.lng], 13);
+
+          filterList();
+        },
+        (error) => {
+          statusEl.innerText = "위치 권한을 허용해 주세요.";
+        }
+      );
     }
 
     // 마커 업데이트
@@ -193,11 +259,20 @@
         if (isVerified) badges += '<span class="badge-verified">★ 5점 ' + ratio + '% 맛집 인증</span> ';
         if (item.isGov) badges += '<span class="badge-gov">청주시 모범음식점</span>';
 
+        let distHtml = '';
+        if (userCoords) {
+          const dist = calculateDistance(userCoords.lat, userCoords.lng, item.lat, item.lng);
+          distHtml = '<span class="dist-tag">' + dist + ' km</span>';
+        }
+
         const card = document.createElement('div');
         card.className = 'card';
         card.onclick = () => openModal(item.id);
         card.innerHTML = 
-          '<div>' + badges + '</div>' +
+          '<div class="card-top">' +
+            '<div>' + badges + '</div>' +
+            distHtml +
+          '</div>' +
           '<div class="card-title">' + item.name + '</div>' +
           '<div class="card-sub">' + item.area + ' · ' + item.category + '</div>' +
           '<div class="rate-bar-bg"><div class="rate-bar-fill" style="width:' + ratio + '%;"></div></div>' +
@@ -220,6 +295,15 @@
         filtered = filtered.filter(r => Math.round((r.fiveStar / r.total) * 100) >= 90);
       } else if (currentFilter === 'gov') {
         filtered = filtered.filter(r => r.isGov);
+      }
+
+      // 내 위치가 있을 경우 거리순으로 자동 정렬
+      if (userCoords) {
+        filtered.sort((a, b) => {
+          const d1 = calculateDistance(userCoords.lat, userCoords.lng, a.lat, a.lng);
+          const d2 = calculateDistance(userCoords.lat, userCoords.lng, b.lat, b.lng);
+          return d1 - d2;
+        });
       }
 
       renderList(filtered);

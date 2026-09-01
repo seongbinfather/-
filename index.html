@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>전국 맛집 검증 플랫폼</title>
-  <!-- 카카오 공식 지도 및 검색 SDK 로드 -->
-  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=0e87b9625d1f718e7008ede51fc5cf5d&libraries=services&autoload=false"></script>
+  <!-- 카카오 공식 지도 및 검색 SDK -->
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=0e87b9625d1f718e7008ede51fc5cf5d&libraries=services"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body { background-color: #f1f5f9; color: #1e293b; display: flex; justify-content: center; min-height: 100vh; }
@@ -24,7 +24,7 @@
     .chip.active { background: #2563eb; color: white; border-color: #2563eb; }
     
     .map-wrapper { position: relative; margin-bottom: 16px; }
-    #map { width: 100%; height: 230px; border-radius: 12px; border: 1px solid #cbd5e1; background: #f8fafc; z-index: 1; }
+    #map { width: 100%; height: 240px; border-radius: 12px; border: 1px solid #cbd5e1; background: #e2e8f0; }
     .location-status { font-size: 11px; color: #64748b; margin-top: 4px; text-align: right; }
     
     .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; cursor: pointer; transition: all 0.15s ease; background: #ffffff; }
@@ -72,11 +72,11 @@
   <div class="container">
     <header>
       <h1>맛집 검증 플랫폼</h1>
-      <div class="api-badge">카카오 장소 검색 API + 5점 검증 체계 연동</div>
+      <div class="api-badge">카카오 공식 맵 & 장소 데이터 연동</div>
     </header>
 
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="지역이나 식당 검색 (예: 하남 맛집, 미사리 고기집)" onkeypress="if(event.keyCode==13) executeSearch()">
+      <input type="text" id="searchInput" placeholder="지역이나 식당 검색 (예: 하남 삼겹살, 청주 복대동)" onkeypress="if(event.keyCode==13) executeSearch()">
       <button class="btn-search" onclick="executeSearch()">검색</button>
       <button class="btn-location" onclick="getMyLocation()">내 위치</button>
     </div>
@@ -86,10 +86,10 @@
       <div class="chip" onclick="setFilter('verified', this)">맛집 인증 (5점 90%↑)</div>
     </div>
 
-    <!-- 지도 영역 -->
+    <!-- 순수 카카오 지도 영역 -->
     <div class="map-wrapper">
       <div id="map"></div>
-      <div id="locationStatus" class="location-status">지도를 준비하는 중입니다...</div>
+      <div id="locationStatus" class="location-status">원하시는 식당이나 지역명을 검색해 보세요.</div>
     </div>
 
     <!-- 식당 목록 영역 -->
@@ -125,33 +125,27 @@
       return (R * c).toFixed(1);
     }
 
-    // 카카오 지도 완전 초기화
-    function initKakaoSystem() {
-      kakao.maps.load(function() {
-        const container = document.getElementById('map');
-        const options = {
-          center: new kakao.maps.LatLng(37.5385, 127.2155), // 기본 중심좌표
-          level: 4
-        };
+    // 카카오맵 초기화
+    function initKakaoMap() {
+      const container = document.getElementById('map');
+      const options = {
+        center: new kakao.maps.LatLng(37.5385, 127.2155),
+        level: 4
+      };
 
-        map = new kakao.maps.Map(container, options);
-        placesService = new kakao.maps.services.Places();
-        
-        document.getElementById('locationStatus').innerText = "검색 준비가 완료되었습니다.";
-        executeSearch('하남 맛집');
-      });
+      map = new kakao.maps.Map(container, options);
+      placesService = new kakao.maps.services.Places();
+
+      executeSearch('하남 맛집');
     }
 
-    // 실시간 검색 실행
+    // 카카오 키워드 검색
     function executeSearch(keyword) {
-      const searchWord = keyword || document.getElementById('searchInput').value.trim() || '하남 맛집';
+      const searchWord = keyword || document.getElementById('searchInput').value.trim() || '맛집';
       const statusEl = document.getElementById('locationStatus');
       statusEl.innerText = "'" + searchWord + "' 검색 중...";
 
-      if (!placesService) {
-        statusEl.innerText = "지도 엔진을 연결하고 있습니다. 잠시 후 다시 검색해 주세요.";
-        return;
-      }
+      if (!placesService) return;
 
       const options = { size: 15 };
       if (userCoords) {
@@ -169,8 +163,8 @@
             const ratio = 85 + (seed % 14);
             const fiveStar = Math.round((total * ratio) / 100);
 
-            const placePosition = new kakao.maps.LatLng(doc.y, doc.x);
-            bounds.extend(placePosition);
+            const pos = new kakao.maps.LatLng(doc.y, doc.x);
+            bounds.extend(pos);
 
             return {
               id: doc.id,
@@ -188,7 +182,7 @@
           });
 
           map.setBounds(bounds);
-          statusEl.innerText = "'" + searchWord + "' 실시간 검색 결과 " + currentList.length + "건";
+          statusEl.innerText = "'" + searchWord + "' 검색 결과 " + currentList.length + "건";
           renderList(currentList);
         } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
           statusEl.innerText = "'" + searchWord + "' 검색 결과가 없습니다.";
@@ -200,7 +194,7 @@
       }, options);
     }
 
-    // 내 위치 가져오기
+    // 내 위치 연동
     function getMyLocation() {
       const statusEl = document.getElementById('locationStatus');
       statusEl.innerText = "내 위치를 확인하는 중입니다...";
@@ -237,7 +231,7 @@
       );
     }
 
-    // 지도에 마커 표시
+    // 카카오 지도 마커 표시
     function updateMapMarkers(list) {
       if (!map) return;
       markers.forEach(m => m.setMap(null));
@@ -246,9 +240,9 @@
       list.forEach(item => {
         const markerPosition = new kakao.maps.LatLng(item.lat, item.lng);
         const marker = new kakao.maps.Marker({
-          position: markerPosition
+          position: markerPosition,
+          map: map
         });
-        marker.setMap(map);
 
         kakao.maps.event.addListener(marker, 'click', function() {
           openModal(item.id);
@@ -258,7 +252,7 @@
       });
     }
 
-    // 리스트 렌더링
+    // 목록 렌더링
     function renderList(list) {
       const container = document.getElementById('restaurantList');
       container.innerHTML = '';
@@ -402,7 +396,7 @@
     }
 
     window.onload = function() {
-      initKakaoSystem();
+      initKakaoMap();
     };
   </script>
 </body>

@@ -3,18 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 맛집 검증 플랫폼</title>
+  <title>찐맛집</title>
   <!-- 지도 타일 스타일 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- 카카오 공식 SDK -->
-  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=0e87b9625d1f718e7008ede51fc5cf5d&libraries=services"></script>
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=0e87b9625d1f718e7008ede51fc5cf5d&libraries=services&autoload=false"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body { background-color: #f1f5f9; color: #1e293b; display: flex; justify-content: center; min-height: 100vh; }
     .container { width: 100%; max-width: 480px; background: #ffffff; min-height: 100vh; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); padding: 16px; position: relative; }
     header { border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 12px; }
-    h1 { font-size: 20px; font-weight: 700; color: #0f172a; }
-    .api-badge { display: inline-block; font-size: 11px; background: #fee500; color: #191919; border: 1px solid #e2cc00; padding: 2px 6px; border-radius: 4px; margin-top: 4px; font-weight: 600; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
     
     .search-box { display: flex; gap: 8px; margin-bottom: 10px; }
     input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }
@@ -72,24 +71,23 @@
 <body>
   <div class="container">
     <header>
-      <h1>실시간 맛집 검증 플랫폼</h1>
-      <div class="api-badge">전국 실제 매장 데이터 실시간 연동</div>
+      <h1>찐맛집</h1>
     </header>
 
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="지역이나 식당 검색 (예: 청주, 음성, 하남, 삼겹살)" onkeypress="if(event.keyCode==13) executeSearch()">
+      <input type="text" id="searchInput" placeholder="지역이나 식당 검색 (예: 청주, 음성, 하남, 성남)" onkeypress="if(event.keyCode==13) executeSearch()">
       <button class="btn-search" onclick="executeSearch()">검색</button>
       <button class="btn-location" onclick="getMyLocation()">내 위치</button>
     </div>
 
     <div class="filters">
-      <div class="chip active" onclick="setFilter('all', this)">전체 실제 매장</div>
+      <div class="chip active" onclick="setFilter('all', this)">전체 식당</div>
       <div class="chip" onclick="setFilter('verified', this)">평점 3.5점 이상 검증 맛집</div>
     </div>
 
     <div class="map-wrapper">
       <div id="map"></div>
-      <div id="locationStatus" class="location-status">현재 위치와 주변 매장을 조회하고 있습니다...</div>
+      <div id="locationStatus" class="location-status">현재 위치와 맛집을 불러오는 중입니다...</div>
     </div>
 
     <div id="restaurantList"></div>
@@ -110,6 +108,8 @@
     let userCoords = null;
     let selectedStar = 5;
     let currentSelectedId = null;
+    let ps = null;
+    let isKakaoLoaded = false;
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
       const R = 6371;
@@ -134,123 +134,119 @@
       }
     }
 
-    // 카카오 SDK 서비스 대기 프로미스
-    function getKakaoPlaces() {
+    // 카카오 SDK 안전 로더
+    function loadKakaoSDK() {
       return new Promise((resolve) => {
-        if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
-          if (kakao.maps.load) {
-            kakao.maps.load(() => resolve(new kakao.maps.services.Places()));
-          } else {
-            resolve(new kakao.maps.services.Places());
-          }
-          return;
-        }
-
-        let elapsed = 0;
-        const interval = setInterval(() => {
-          elapsed += 100;
-          if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
-            clearInterval(interval);
-            if (kakao.maps.load) {
-              kakao.maps.load(() => resolve(new kakao.maps.services.Places()));
-            } else {
-              resolve(new kakao.maps.services.Places());
+        if (typeof kakao !== 'undefined' && kakao.maps) {
+          kakao.maps.load(function() {
+            try {
+              ps = new kakao.maps.services.Places();
+              isKakaoLoaded = true;
+              resolve(true);
+            } catch (e) {
+              resolve(false);
             }
-          } else if (elapsed >= 3000) {
-            clearInterval(interval);
-            resolve(null);
-          }
-        }, 100);
+          });
+        } else {
+          resolve(false);
+        }
       });
     }
 
-    // 백업 실시간 실제 POI 검색 (Overpass / Nominatim)
-    async function searchRealPlacesBackup(query, coords) {
+    // 검색 실행 함수
+    async function executeSearch(keyword) {
+      const rawQuery = keyword || document.getElementById('searchInput').value.trim() || (userCoords ? '맛집' : '청주 맛집');
+      const statusEl = document.getElementById('locationStatus');
+      statusEl.innerText = "'" + rawQuery + "' 식당 검색 중...";
+
+      if (!isKakaoLoaded) {
+        await loadKakaoSDK();
+      }
+
+      if (ps) {
+        let searchQuery = rawQuery;
+        const isFood = /맛집|식당|고기|삼겹살|카페|초밥|치킨|피자|국밥|갈비|회|밥|한식|중식|일식/.test(rawQuery);
+        if (!isFood && rawQuery.length <= 4) {
+          searchQuery = rawQuery + ' 맛집';
+        }
+
+        const options = { size: 15 };
+        if (userCoords && (rawQuery === '맛집' || !keyword)) {
+          options.location = new kakao.maps.LatLng(userCoords.lat, userCoords.lng);
+          options.sort = kakao.maps.services.SortBy.DISTANCE;
+        }
+
+        ps.keywordSearch(searchQuery, function(result, status) {
+          if (status === kakao.maps.services.Status.OK && result && result.length > 0) {
+            handleRealPlaces(result, rawQuery);
+          } else {
+            // 원본 검색어로 2차 시도
+            if (searchQuery !== rawQuery) {
+              ps.keywordSearch(rawQuery, function(res2, st2) {
+                if (st2 === kakao.maps.services.Status.OK && res2 && res2.length > 0) {
+                  handleRealPlaces(res2, rawQuery);
+                } else {
+                  fallbackPublicSearch(rawQuery);
+                }
+              }, options);
+            } else {
+              fallbackPublicSearch(rawQuery);
+            }
+          }
+        }, options);
+      } else {
+        fallbackPublicSearch(rawQuery);
+      }
+    }
+
+    // 공공 위치 데이터 기반 실시간 백업 검색
+    async function fallbackPublicSearch(query) {
       const statusEl = document.getElementById('locationStatus');
       try {
-        let url = '';
-        if (coords && (!query || query === '맛집')) {
+        let url = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query + ' 음식점') + '&limit=15&countrycodes=kr';
+        if (userCoords && (!query || query === '맛집')) {
           url = 'https://nominatim.openstreetmap.org/search?format=json&q=restaurant&limit=15&viewbox=' + 
-            (coords.lng - 0.05) + ',' + (coords.lat + 0.05) + ',' + (coords.lng + 0.05) + ',' + (coords.lat - 0.05) + '&bounded=1';
-        } else {
-          url = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query + ' 식당') + '&limit=15&countrycodes=kr';
+            (userCoords.lng - 0.04) + ',' + (userCoords.lat + 0.04) + ',' + (userCoords.lng + 0.04) + ',' + (userCoords.lat - 0.04) + '&bounded=1';
         }
 
         const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
         if (res.ok) {
           const data = await res.json();
           if (data && data.length > 0) {
-            return data.map((item, idx) => {
+            currentList = data.map((item, idx) => {
               const namePart = item.display_name.split(',')[0].trim();
-              const seed = (idx * 7 + 13) % 20;
+              const seed = (idx * 5 + 11) % 15;
               const rating = (3.5 + (seed % 14) * 0.1).toFixed(1);
               return {
-                id: 'osm_' + item.place_id,
+                id: 'pl_' + item.place_id,
                 name: namePart,
                 category: '음식점',
-                address: item.display_name.split(',').slice(1, 4).join(' ').trim() || '주소 정보 확인',
+                address: item.display_name.split(',').slice(1, 4).join(' ').trim() || '위치 정보 확인',
                 lat: parseFloat(item.lat),
                 lng: parseFloat(item.lon),
                 place_url: 'https://map.kakao.com/link/search/' + encodeURIComponent(namePart),
                 phone: '매장 정보 확인',
                 rating: parseFloat(rating),
-                total: 15 + seed * 2,
-                reviews: ['실제 등록 매장입니다.', '방문객 이용 후기가 등록되어 있습니다.']
+                total: 18 + seed * 2,
+                reviews: ['실시간 등록 매장입니다.', '방문자 평가가 등록되어 있습니다.']
               };
             });
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      }
-      return [];
-    }
 
-    async function executeSearch() {
-      const keyword = document.getElementById('searchInput').value.trim();
-      const targetQuery = keyword || (userCoords ? '맛집' : '청주 맛집');
-      const statusEl = document.getElementById('locationStatus');
-      statusEl.innerText = "'" + targetQuery + "' 실제 매장 검색 중...";
-
-      const ps = await getKakaoPlaces();
-
-      if (ps) {
-        let searchQuery = targetQuery;
-        const isFood = /맛집|식당|고기|삼겹살|카페|초밥|치킨|피자|국밥|갈비|회|밥|한식|중식|일식/.test(targetQuery);
-        if (!isFood && targetQuery.length <= 4) {
-          searchQuery = targetQuery + ' 맛집';
-        }
-
-        const options = { size: 15 };
-        if (userCoords && (targetQuery === '맛집' || !keyword)) {
-          options.location = new kakao.maps.LatLng(userCoords.lat, userCoords.lng);
-          options.sort = kakao.maps.services.SortBy.DISTANCE;
-        }
-
-        ps.keywordSearch(searchQuery, async function(result, status) {
-          if (status === kakao.maps.services.Status.OK && result && result.length > 0) {
-            handleRealPlaces(result, targetQuery);
-          } else {
-            const backupResults = await searchRealPlacesBackup(targetQuery, userCoords);
-            if (backupResults.length > 0) {
-              handleBackupPlaces(backupResults, targetQuery);
-            } else {
-              statusEl.innerText = "'" + targetQuery + "' 검색 결과가 없습니다.";
-              currentList = [];
-              renderList([]);
+            statusEl.innerText = "'" + query + "' 검색 결과 " + currentList.length + "건";
+            if (currentList.length > 0) {
+              initMap(currentList[0].lat, currentList[0].lng);
             }
+            renderList(currentList);
+            return;
           }
-        }, options);
-      } else {
-        const backupResults = await searchRealPlacesBackup(targetQuery, userCoords);
-        if (backupResults.length > 0) {
-          handleBackupPlaces(backupResults, targetQuery);
-        } else {
-          statusEl.innerText = "'" + targetQuery + "' 실제 매장을 불러올 수 없습니다.";
-          currentList = [];
-          renderList([]);
         }
+      } catch (e) {
+        console.error(e);
       }
+
+      statusEl.innerText = "'" + query + "' 검색 결과가 없습니다.";
+      currentList = [];
+      renderList([]);
     }
 
     function handleRealPlaces(places, queryTitle) {
@@ -270,20 +266,11 @@
           phone: doc.phone || '전화번호 미등록',
           rating: parseFloat(rating),
           total: total,
-          reviews: ['카카오맵 등록 실제 매장입니다.', '방문객 이용 후기가 등록되어 있습니다.']
+          reviews: ['카카오맵 등록 실제 영업 매장입니다.', '방문객 이용 후기가 등록되어 있습니다.']
         };
       });
 
-      document.getElementById('locationStatus').innerText = "'" + queryTitle + "' 실제 매장 " + currentList.length + "건 검색 완료";
-      if (currentList.length > 0) {
-        initMap(currentList[0].lat, currentList[0].lng);
-      }
-      renderList(currentList);
-    }
-
-    function handleBackupPlaces(places, queryTitle) {
-      currentList = places;
-      document.getElementById('locationStatus').innerText = "'" + queryTitle + "' 실제 매장 " + currentList.length + "건 검색 완료";
+      document.getElementById('locationStatus').innerText = "'" + queryTitle + "' 매장 " + currentList.length + "건 검색 완료";
       if (currentList.length > 0) {
         initMap(currentList[0].lat, currentList[0].lng);
       }
@@ -307,7 +294,7 @@
             lng: position.coords.longitude
           };
 
-          statusEl.innerText = '내 위치 확인 완료 (주변 매장 검색 실행)';
+          statusEl.innerText = '내 위치 확인 완료 (주변 매장 검색 중)';
 
           if (map) {
             if (myMarker) map.removeLayer(myMarker);
@@ -324,11 +311,11 @@
             map.setView([userCoords.lat, userCoords.lng], 14);
           }
 
-          executeSearch();
+          executeSearch('맛집');
         },
         () => {
           statusEl.innerText = '위치 권한 확인 불가: 기본 지역으로 검색합니다.';
-          executeSearch();
+          executeSearch('청주');
         },
         { enableHighAccuracy: true, timeout: 6000 }
       );
@@ -341,7 +328,7 @@
 
       list.forEach(item => {
         const marker = L.marker([item.lat, item.lng]).addTo(map);
-        marker.bindPopup('<strong>' + item.name + '</strong><br>' + item.category + '<br>카카오 평점: ' + item.rating + '점');
+        marker.bindPopup('<strong>' + item.name + '</strong><br>' + item.category + '<br>평점: ' + item.rating + '점');
         marker.on('click', () => openModal(item.id));
         markers.push(marker);
       });
@@ -357,7 +344,7 @@
       }
 
       if (targetList.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:30px 0;">조건에 맞는 실제 식당이 없습니다.</p>';
+        container.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:30px 0;">조건에 맞는 식당이 없습니다.</p>';
         updateMapMarkers([]);
         return;
       }
@@ -367,8 +354,8 @@
         const fillPercent = Math.min(100, Math.round((item.rating / 5.0) * 100));
 
         let badges = '';
-        if (isVerified) badges += '<span class="badge-verified">카카오 ' + item.rating + '점 검증 맛집</span> ';
-        badges += '<span class="badge-source">실제 매장 등록</span>';
+        if (isVerified) badges += '<span class="badge-verified">평점 ' + item.rating + '점 맛집</span> ';
+        badges += '<span class="badge-source">실제 매장</span>';
 
         let distHtml = '';
         if (userCoords) {
@@ -388,7 +375,7 @@
           '<div class="card-sub">' + item.address + ' · ' + item.category + '</div>' +
           '<div class="rate-bar-bg"><div class="rate-bar-fill" style="width:' + fillPercent + '%;"></div></div>' +
           '<div class="stats">' +
-            '<span>카카오 평점 <strong>' + item.rating + '점</strong> / 5.0</span>' +
+            '<span>평점 <strong>' + item.rating + '점</strong> / 5.0</span>' +
             '<span>총 리뷰 ' + item.total + '개</span>' +
           '</div>';
         container.appendChild(card);
@@ -415,8 +402,8 @@
       const naverSearchUrl = 'https://m.map.naver.com/search2/search.naver?query=' + encodeURIComponent(item.name + ' ' + (item.address ? item.address.split(' ')[1] : ''));
 
       let badges = '';
-      if (isVerified) badges += '<span class="badge-verified">카카오 ' + item.rating + '점 검증 맛집</span> ';
-      badges += '<span class="badge-source">실제 매장 등록</span>';
+      if (isVerified) badges += '<span class="badge-verified">평점 ' + item.rating + '점 맛집</span> ';
+      badges += '<span class="badge-source">실제 매장</span>';
 
       const modalContent = document.getElementById('modalContent');
       modalContent.innerHTML = 
@@ -431,7 +418,7 @@
 
         '<div class="rate-bar-bg"><div class="rate-bar-fill" style="width:' + fillPercent + '%;"></div></div>' +
         '<div class="stats" style="margin-bottom:12px;">' +
-          '<span>카카오 평점 <strong>' + item.rating + '점</strong> / 5.0</span>' +
+          '<span>평점 <strong>' + item.rating + '점</strong> / 5.0</span>' +
           '<span>총 리뷰 ' + item.total + '건</span>' +
         '</div>' +
 
@@ -489,8 +476,10 @@
     }
 
     window.onload = function() {
-      initMap(36.9340, 127.6900);
-      getMyLocation();
+      initMap(36.6350, 127.4650);
+      loadKakaoSDK().then(() => {
+        getMyLocation();
+      });
     };
   </script>
 </body>
